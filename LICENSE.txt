@@ -2,7 +2,7 @@ The Michigan Honor License
 This unvetted license below is called the "Michigan Honor License" as the
 3-Clause BSD License plus two clauses for academic integrity.
 
-Copyright <YEAR> <COPYRIGHT HOLDER>
+Copyright 2026 <COPYRIGHT HOLDER>
 
 Redistribution and use in source and binary forms, with or without modification,
 are permitted provided that the following conditions are met:

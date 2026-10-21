@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bug Navigation</title>
+<meta name="description" content="Autonomous navigation on the MBot-Omni: drive to a goal pose and get around whatever is in the way.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Lab-notebook layout: one measured column, diagrams breaking full width.
+   Accents are the two colors from the project's own Lidar figure --
+   orange for the direction to the goal, magenta for the shortest ray. */
+:root {
+  --paper: #f6f8fa;
+  --surface: #ffffff;
+  --ink: #141a22;
+  --ink-2: #4d5967;
+  --rule: #d8dee6;
+  --signal: #c25c08;
+  --ray: #ae1877;
+  --ok: #1c7257;
+
+  --display: 'Archivo', system-ui, -apple-system, sans-serif;
+  --body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1318;
+    --surface: #171d25;
+    --ink: #e8edf3;
+    --ink-2: #9cabb9;
+    --rule: #28323d;
+    --signal: #f0a254;
+    --ray: #f475c2;
+    --ok: #52c69d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0f1318;
+  --surface: #171d25;
+  --ink: #e8edf3;
+  --ink-2: #9cabb9;
+  --rule: #28323d;
+  --signal: #f0a254;
+  --ray: #f475c2;
+  --ok: #52c69d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  padding-block: 0 4rem;
+  padding-inline: 20px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 16px/1.65 var(--body);
+}
+.wrap { max-width: 880px; margin: 0 auto; }
+.prose { max-width: 66ch; }
+img, svg { max-width: 100%; }
+
+/* ---- masthead ---- */
+header.masthead {
+  padding-block: 3.5rem 2rem;
+  border-bottom: 1px solid var(--rule);
+}
+.eyebrow {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--signal);
+  margin: 0 0 1.1rem;
+}
+h1 {
+  font: 700 clamp(2.6rem, 9vw, 4.4rem)/0.98 var(--display);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+}
+.standfirst {
+  font-size: 1.15rem;
+  color: var(--ink-2);
+  max-width: 54ch;
+  margin: 0 0 2rem;
+}
+dl.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1.25rem 1.5rem;
+  margin: 0;
+}
+dl.facts dt {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-bottom: 0.4rem;
+}
+dl.facts dd { margin: 0; font-size: 0.95rem; }
+dl.facts a { color: inherit; }
+
+/* ---- sections ---- */
+section { padding-block: 3rem 0; }
+h2 {
+  font: 600 clamp(1.5rem, 4vw, 2rem)/1.15 var(--display);
+  letter-spacing: -0.015em;
+  margin: 0 0 0.35rem;
+}
+h3 {
+  font: 600 1.05rem/1.3 var(--display);
+  margin: 2rem 0 0.4rem;
+}
+.kicker {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin: 0 0 1.4rem;
+}
+p { margin: 0 0 1rem; }
+a { color: var(--signal); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+code {
+  font: 400 0.875em/1.4 var(--mono);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 0.08em 0.32em;
+}
+ul { margin: 0 0 1rem; padding-left: 1.1rem; }
+li { margin-bottom: 0.45rem; }
+
+/* ---- video ---- */
+.video-frame {
+  aspect-ratio: 16 / 9;
+  max-width: 100%;
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  display: block;
+}
+.placeholder {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  border: 2px dashed var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  gap: 0.6rem;
+}
+.placeholder .tag {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ray);
+}
+.placeholder p { color: var(--ink-2); margin: 0; font-size: 0.95rem; }
+.caption {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  margin: 0.75rem 0 0;
+  max-width: 60ch;
+}
+
+/* ---- figures ---- */
+figure { margin: 1.75rem 0 0; }
+.figbox {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  padding: 1.25rem;
+  overflow-x: auto;
+}
+.figbox svg { display: block; min-width: 520px; }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+  font: 400 0.85rem/1.4 var(--body);
+  color: var(--ink-2);
+}
+.legend li { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.swatch { width: 18px; height: 3px; border-radius: 2px; flex: none; }
+
+/* svg text + strokes, themed */
+svg text { font-family: var(--mono); fill: var(--ink); }
+svg .lbl { font-size: 12px; fill: var(--ink-2); }
+svg .node-t { font-size: 13px; font-weight: 500; }
+svg .node { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+svg .edge { stroke: var(--ink-2); stroke-width: 1.5; fill: none; }
+
+/* ---- table ---- */
+.tablewrap { overflow-x: auto; margin: 1.75rem 0 0; }
+table { border-collapse: collapse; width: 100%; min-width: 540px; font-size: 0.9rem; }
+caption {
+  text-align: left;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  padding-bottom: 0.75rem;
+}
+th, td { text-align: left; padding: 0.6rem 0.9rem 0.6rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font: 500 0.8rem/1.3 var(--mono); letter-spacing: 0.04em; color: var(--ink-2); }
+td:first-child { font: 500 0.85rem/1.4 var(--mono); white-space: nowrap; }
+td.num { font-variant-numeric: tabular-nums; }
+
+/* ---- trace ---- */
+pre {
+  margin: 1.5rem 0 0;
+  padding: 1.1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ray);
+  border-radius: 4px;
+  overflow-x: auto;
+  font: 400 0.8rem/1.6 var(--mono);
+  color: var(--ink);
+}
+pre b { color: var(--ray); font-weight: 500; }
+
+/* ---- todo blocks ---- */
+.todo {
+  border: 2px dashed var(--rule);
+  border-radius: 4px;
+  padding: 1.1rem 1.25rem;
+  margin: 1.5rem 0 0;
+  background: var(--surface);
+}
+.todo > .tag {
+  display: block;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ray);
+  margin-bottom: 0.6rem;
+}
+.todo p, .todo li { color: var(--ink-2); font-size: 0.95rem; }
+.todo :last-child { margin-bottom: 0; }
+
+footer {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+footer p { margin: 0 0 0.4rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Hello, Robot! &middot; Project 2</p>
+  <h1>Bug Navigation</h1>
+  <p class="standfirst">
+    Give the MBot-Omni a goal pose and it drives there on odometry, feeling
+    ahead with the Lidar and following the edge of anything that gets in the
+    way until the path opens up again.
+  </p>
+  <dl class="facts">
+    <div>
+      <dt>Team</dt>
+      <!-- TODO: replace with your names -->
+      <dd>Your names here</dd>
+    </div>
+    <div>
+      <dt>Platform</dt>
+      <dd>MBot-Omni, MBot Bridge API</dd>
+    </div>
+    <div>
+      <dt>Code</dt>
+      <dd><a href="https://github.com/Howard-f35/Bug-Navigation">GitHub repository</a></dd>
+    </div>
+    <div>
+      <dt>Write-up</dt>
+      <dd><a href="ALGORITHM.md">Algorithm &amp; state machine</a></dd>
+    </div>
+  </dl>
+</header>
+
+<section>
+  <h2>The run</h2>
+  <p class="kicker">Demonstration</p>
+
+  <!-- TODO: swap the placeholder below for your video, one of these two ways.
+       1. A file committed to the repo (keep it well under 100 MB):
+          <video class="video-frame" controls preload="metadata" poster="media/poster.jpg">
+            <source src="media/bug-navigation.mp4" type="video/mp4">
+          </video>
+       2. A YouTube link:
+          <iframe class="video-frame" src="https://www.youtube.com/embed/VIDEO_ID"
+                  title="Bug navigation demo" frameborder="0" allowfullscreen></iframe>
+  -->
+  <div class="placeholder">
+    <span class="tag">Video goes here</span>
+    <p>Drop the demo clip in as <code>media/bug-navigation.mp4</code>, or paste a YouTube embed. The HTML comment above this block has both snippets ready to uncomment.</p>
+  </div>
+  <p class="caption">
+    The robot starts at the origin of its own odometry frame, is given a goal
+    pose, and reports its state and pose on every control iteration.
+  </p>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <p class="kicker">Four states</p>
+  <div class="prose">
+    <p>
+      Navigation runs as a state machine, one pass per Lidar scan at 10&nbsp;Hz.
+      The robot starts out driving straight at the goal and only stops doing
+      that when the scan says the way is blocked.
+    </p>
+  </div>
+
+  <figure>
+    <div class="figbox">
+      <svg viewBox="0 0 820 240" role="img" aria-label="State machine: DRIVE_TO_GOAL goes to AVOID_OBSTACLE when blocked and back when the path is clear and the robot has made progress; either state goes to TURN_TO_GOAL_ANGLE at the goal position, which goes to DONE.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ink-2)"></path>
+          </marker>
+          <marker id="ah-ray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ray)"></path>
+          </marker>
+          <marker id="ah-ok" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--ok)"></path>
+          </marker>
+        </defs>
+
+        <!-- start -->
+        <path class="edge" d="M 8 176 L 36 176" marker-end="url(#ah)"></path>
+        <text class="lbl" x="8" y="162">start</text>
+
+        <!-- nodes -->
+        <rect class="node" x="40" y="150" width="190" height="52" rx="5"></rect>
+        <text class="node-t" x="135" y="181" text-anchor="middle">DRIVE_TO_GOAL</text>
+
+        <rect class="node" x="40" y="26" width="190" height="52" rx="5"></rect>
+        <text class="node-t" x="135" y="57" text-anchor="middle">AVOID_OBSTACLE</text>
+
+        <rect class="node" x="420" y="150" width="226" height="52" rx="5"></rect>
+        <text class="node-t" x="533" y="181" text-anchor="middle">TURN_TO_GOAL_ANGLE</text>
+
+        <rect class="node" x="712" y="150" width="96" height="52" rx="5"></rect>
+        <text class="node-t" x="760" y="181" text-anchor="middle">DONE</text>
+
+        <!-- drive -> avoid -->
+        <path class="edge" d="M 92 150 L 92 78" marker-end="url(#ah-ray)" stroke="var(--ray)"></path>
+        <text class="lbl" x="84" y="118" text-anchor="end" fill="var(--ray)">blocked</text>
+
+        <!-- avoid -> drive -->
+        <path class="edge" d="M 178 78 L 178 150" marker-end="url(#ah-ok)" stroke="var(--ok)"></path>
+        <text class="lbl" x="188" y="108" fill="var(--ok)">path clear &times;5</text>
+        <text class="lbl" x="188" y="126" fill="var(--ok)">and 0.1 m closer</text>
+
+        <!-- drive -> turn -->
+        <path class="edge" d="M 230 176 L 410 176" marker-end="url(#ah)"></path>
+        <text class="lbl" x="320" y="166" text-anchor="middle">at goal position</text>
+
+        <!-- avoid -> turn -->
+        <path class="edge" d="M 230 52 L 533 52 L 533 140" marker-end="url(#ah)"></path>
+        <text class="lbl" x="390" y="42" text-anchor="middle">at goal position</text>
+
+        <!-- turn -> done -->
+        <path class="edge" d="M 646 176 L 702 176" marker-end="url(#ah)"></path>
+        <text class="lbl" x="674" y="162" text-anchor="middle">&plusmn;5&deg;</text>
+      </svg>
+    </div>
+  </figure>
+
+  <div class="tablewrap">
+    <table>
+      <caption>What each state does</caption>
+      <thead>
+        <tr><th scope="col">State</th><th scope="col">Behavior</th><th scope="col">Leaves when</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>DRIVE_TO_GOAL</td>
+          <td>Translates straight at the goal, speed proportional to the distance left, without turning.</td>
+          <td>Within 5&nbsp;cm of the goal, or the path ahead is blocked.</td>
+        </tr>
+        <tr>
+          <td>AVOID_OBSTACLE</td>
+          <td>Follows the edge of the obstacle at 0.5&nbsp;m, holding its heading.</td>
+          <td>Path clear on five straight scans <em>and</em> the robot is closer to the goal than where it met the obstacle.</td>
+        </tr>
+        <tr>
+          <td>TURN_TO_GOAL_ANGLE</td>
+          <td>Turns in place to the goal heading.</td>
+          <td>Heading error under 5&deg;.</td>
+        </tr>
+        <tr>
+          <td>DONE</td>
+          <td>Stops and prints the final pose.</td>
+          <td>&mdash;</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Holding the heading while travelling</h3>
+  <div class="prose">
+    <p>
+      The omni drive can translate in any direction without rotating, so the
+      robot keeps <code>theta</code> fixed the whole way and turns only at the
+      end. That keeps the Lidar slice pointed at a consistent part of the
+      world, which makes the obstacle check much easier to reason about. The
+      direction to the goal is rotated from the odometry frame into the body
+      frame on every iteration, so the command stays correct however the robot
+      is facing.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Is the path blocked?</h2>
+  <p class="kicker">Reading the scan</p>
+  <div class="prose">
+    <p>
+      Only the part of the scan the robot is about to drive into matters.
+      <code>find_min_ray_in_slice()</code> returns the shortest valid ray in a
+      60&deg; slice centered on the direction to the goal. Checking a slice
+      rather than one ray catches an obstacle sitting near the path but not
+      exactly on it &mdash; which is the case drawn below, where the direct
+      line to the goal misses the box but the robot would not.
+    </p>
+  </div>
+
+  <figure>
+    <div class="figbox">
+      <svg viewBox="0 0 740 320" role="img" aria-label="The robot at left, a 60 degree slice of the Lidar scan opening toward the goal at right, an obstacle inside the slice but just off the direct line, and the shortest ray in the slice reaching that obstacle.">
+        <defs>
+          <marker id="ah-signal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--signal)"></path>
+          </marker>
+        </defs>
+
+        <!-- slice -->
+        <path d="M 110 170 L 344.7 17.3 A 280 280 0 0 1 359.6 296.8 Z"
+              fill="var(--signal)" fill-opacity="0.09"
+              stroke="var(--signal)" stroke-opacity="0.45"
+              stroke-width="1" stroke-dasharray="5 4"></path>
+
+        <!-- obstacle -->
+        <rect x="320" y="46" width="92" height="92" rx="3"
+              fill="var(--ink-2)" fill-opacity="0.22"
+              stroke="var(--ink-2)" stroke-width="1.5"></rect>
+        <text class="lbl" x="366" y="97" text-anchor="middle">obstacle</text>
+
+        <!-- direction to the goal -->
+        <path d="M 110 170 L 648 142" stroke="var(--signal)" stroke-width="3"
+              fill="none" marker-end="url(#ah-signal)"></path>
+
+        <!-- shortest ray in the slice -->
+        <path d="M 110 170 L 320 138" stroke="var(--ray)" stroke-width="3" fill="none"></path>
+        <circle cx="320" cy="138" r="4" fill="var(--ray)"></circle>
+
+        <!-- robot -->
+        <circle cx="110" cy="170" r="24" fill="var(--surface)" stroke="var(--ink)" stroke-width="2"></circle>
+        <circle cx="110" cy="170" r="4" fill="var(--ink)"></circle>
+        <text class="lbl" x="110" y="214" text-anchor="middle">robot</text>
+
+        <!-- goal -->
+        <circle cx="672" cy="140" r="13" fill="none" stroke="var(--ink)" stroke-width="2"></circle>
+        <circle cx="672" cy="140" r="4" fill="var(--ink)"></circle>
+        <text class="lbl" x="672" y="112" text-anchor="middle">goal</text>
+
+        <text class="lbl" x="250" y="292">60&deg; slice</text>
+      </svg>
+    </div>
+    <ul class="legend">
+      <li><span class="swatch" style="background: var(--signal)"></span>direction the robot must travel to reach the goal</li>
+      <li><span class="swatch" style="background: var(--ray)"></span>shortest ray inside the slice</li>
+    </ul>
+  </figure>
+
+  <div class="prose">
+    <p>
+      That shortest ray decides the state. Two details keep the decision
+      stable:
+    </p>
+    <ul>
+      <li>
+        An obstacle counts only if it is nearer than the goal. Anything
+        further away is behind the goal and must not trigger avoidance.
+      </li>
+      <li>
+        Blocking starts at 0.5&nbsp;m but the path is not called clear again
+        until 0.7&nbsp;m. Without that gap between the two thresholds, a
+        reading hovering at a single threshold flips the state on every scan.
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <h2>What it prints</h2>
+  <p class="kicker">Telemetry</p>
+  <div class="prose">
+    <p>
+      Every iteration prints the state, the pose, the distance left and the
+      current slice reading; transitions get their own marked line. This is the
+      format staff can read along with during the demo &mdash; here, the robot
+      meets a wall head on, picks a side, follows it round and resumes.
+    </p>
+  </div>
+  <pre><code>DRIVE_TO_GOAL      pose: ( 0.24,  0.00,    0.0 deg)  goal dist: 1.76 m  path: 0.54 m
+DRIVE_TO_GOAL      pose: ( 0.27,  0.00,    0.0 deg)  goal dist: 1.73 m  path: 0.51 m
+    going around to the left
+<b>==&gt; AVOID_OBSTACLE</b>
+AVOID_OBSTACLE     pose: ( 0.30,  0.00,    0.0 deg)  goal dist: 1.70 m  path: 0.47 m
+AVOID_OBSTACLE     pose: ( 0.28,  0.04,    0.0 deg)  goal dist: 1.72 m  path: 0.49 m
+          ...
+AVOID_OBSTACLE     pose: ( 0.79,  1.09,    0.0 deg)  goal dist: 1.63 m  path: clear
+AVOID_OBSTACLE     pose: ( 0.81,  1.10,    0.0 deg)  goal dist: 1.62 m  path: clear
+<b>==&gt; DRIVE_TO_GOAL</b>
+DRIVE_TO_GOAL      pose: ( 0.83,  1.09,    0.0 deg)  goal dist: 1.60 m  path: clear
+          ...
+DRIVE_TO_GOAL      pose: ( 1.96,  0.03,    0.0 deg)  goal dist: 0.05 m  path: clear
+<b>==&gt; TURN_TO_GOAL_ANGLE</b>
+<b>==&gt; DONE</b>
+Goal pose reached.
+Final pose: x: 1.968 m, y: 0.030 m, theta: 0.0 deg</code></pre>
+  <p class="caption">
+    Trace from the offline test harness, not from the robot: a 1.2&nbsp;m wall
+    across the path to a goal 2&nbsp;m straight ahead.
+  </p>
+</section>
+
+<section>
+  <h2>Discussion</h2>
+  <p class="kicker">What we learned</p>
+
+  <h3>Two bugs that only showed up in testing</h3>
+  <div class="prose">
+    <p>
+      Before taking the algorithm to the robot we ran it against a simulated
+      Lidar and odometry, which turned up two failures that are hard to spot by
+      reading the code.
+    </p>
+    <p>
+      <strong>Choosing a side from the goal direction fails when the obstacle
+      is dead ahead.</strong> The first version picked which way to go around
+      from the sign of a dot product with the direction to the goal. When the
+      obstacle sits squarely in front, that dot product is zero and the choice
+      is arbitrary: the robot took a 1.9&nbsp;m detour around the far end of a
+      wall whose near end was 0.2&nbsp;m away. The fix was to sweep outward
+      from the goal direction in 5&deg; steps looking for the first clear
+      30&deg; slice, and head for that gap instead. The near end of the
+      obstacle is normally the first thing found, which is the short way round.
+    </p>
+    <p>
+      <strong>Leaving avoidance on &ldquo;the path looks clear&rdquo; alone
+      livelocks.</strong> Against a U-shaped obstacle the robot flipped between
+      driving and avoiding more than a hundred times without escaping: every
+      time it backed away from the far wall, the way out looked clear, so it
+      drove straight back in. Requiring the robot to also be 0.1&nbsp;m closer
+      to the goal than the point where it met the obstacle &mdash; the leave
+      condition from the Bug&nbsp;2 algorithm &mdash; makes it follow the wall
+      around and out instead. With that one condition added, it escapes the
+      trap and reaches the goal.
+    </p>
+    <p>
+      A third, smaller one: if the scan comes back with no valid rays at all
+      while the robot is avoiding, there is nothing left to follow, and the
+      first version sat still waiting for an edge that never came. It now
+      returns to driving at the goal.
+    </p>
+  </div>
+
+  <h3>Tuning</h3>
+  <div class="prose">
+    <p>
+      Proportional control alone stalls near the goal, where the command gets
+      too small to overcome friction, so both the translation and the rotation
+      have a floor as well as a ceiling: the robot keeps creeping until it is
+      inside tolerance. The ceilings keep it slow enough that one scan every
+      0.1&nbsp;s is enough to react to something appearing in front of it.
+    </p>
+  </div>
+
+  <div class="todo">
+    <span class="tag">Fill in after the demo runs</span>
+    <ul>
+      <li>How close the robot actually got to each goal, and how much of that error was odometry drift rather than control error.</li>
+      <li>Whether <code>LIDAR_ANGLE_SIGN</code> needed flipping on the hardware, and how you could tell.</li>
+      <li>Any thresholds retuned for the real arena: obstacle distance, follow setpoint, speeds.</li>
+      <li>What the robot did that the simulation never showed.</li>
+    </ul>
+  </div>
+
+  <h3>Where it falls over</h3>
+  <div class="prose">
+    <ul>
+      <li>
+        <strong>Odometry drift.</strong> Goals are in the odometry frame, which
+        drifts as the wheels slip. A long run with a lot of edge-following ends
+        up further from the true goal than the printed pose admits.
+      </li>
+      <li>
+        <strong>A fully enclosed goal.</strong> No bug algorithm can reach a
+        goal that is walled off. Ours circles the enclosure rather than
+        reporting failure; there is no give-up condition.
+      </li>
+      <li>
+        <strong>Anything below the scan plane.</strong> The Lidar sees one
+        horizontal slice, so a low obstacle is invisible.
+      </li>
+      <li>
+        <strong>No memory of the map.</strong> Each decision uses only the
+        current scan, so the path taken is a good guess, never the shortest
+        one.
+      </li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>Hello, Robot! &mdash; Introduction to AI and Programming &middot; Project 2: Autonomous Navigation</p>
+  <p>Source and write-up: <a href="https://github.com/Howard-f35/Bug-Navigation">github.com/Howard-f35/Bug-Navigation</a></p>
+</footer>
+
+</div>
+</body>
+</html>
