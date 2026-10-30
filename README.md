@@ -37,5 +37,26 @@ printed angle of the nearest ray is positive when an obstacle is physically on
 the robot's left. Every slice check depends on that sign, so if the robot
 avoids obstacles on the wrong side, flip it.
 
+## If it says there's no odometry
+
+```
+[MBot API] ERROR: Bad MBot request. No channel: MBOT_ODOMETRY
+```
+
+The bridge has never received anything on that channel, so the robot isn't
+publishing its pose and the scripts stop with a message instead of driving.
+The Lidar can work fine while this is broken: the Lidar is read on the Pi,
+but odometry comes from the Pico over the serial link. Worth checking, in
+order:
+
+1. The robot is powered from the battery and the motor board is on, not just
+   plugged into USB.
+2. `systemctl list-units 'mbot*'` — see which services exist and whether any
+   have failed, then `systemctl status <name>` on the suspicious one.
+3. The pose readout in the MBot web app. If it is blank or frozen there too,
+   the problem is on the robot, not in these scripts.
+4. Restart the bridge *after* odometry is publishing again, since it only
+   learns about a channel once something arrives on it.
+
 See the [project instructions](https://hellorob.org/projects/p2) for the
 assignment itself.

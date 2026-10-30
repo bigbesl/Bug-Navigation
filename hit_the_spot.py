@@ -26,6 +26,38 @@ MAX_TURN = 1.0          # Fastest rotation we will command (rad/s).
 MIN_TURN = 0.3          # Slowest rotation that still turns the robot (rad/s).
 
 LOOP_SLEEP = 0.05       # Delay between control updates (s).
+ODOM_TRIES = 20         # Reads to wait for odometry before giving up.
+
+
+def read_pose(robot, tries=ODOM_TRIES):
+    """Reads the robot's pose, waiting for odometry to start arriving.
+
+    read_odometry() hands back an empty list, not a pose, when the bridge has
+    no odometry for us: either nothing has been published on MBOT_ODOMETRY
+    yet, or the robot's services aren't running. Unpacking that empty list is
+    what crashes the script, so retry briefly and then say what is wrong.
+
+    Args:
+        robot (MBot): The robot to read.
+        tries (int): How many reads to attempt before giving up.
+
+    Returns:
+        list: The robot's odometry [x, y, theta].
+
+    Raises:
+        RuntimeError: If no odometry arrives.
+    """
+    for _ in range(tries):
+        pose = robot.read_odometry()
+        if pose is not None and len(pose) == 3:
+            return pose
+        time.sleep(0.1)
+
+    raise RuntimeError(
+        "No odometry from the robot: the MBOT_ODOMETRY channel is empty.\n"
+        "The robot's services are probably not running. Check with:\n"
+        "    systemctl list-units 'mbot*'\n"
+        "and check that the pose updates in the MBot web app.")
 
 
 def wrap_to_pi(angle):
@@ -76,7 +108,7 @@ def drive_to_pose(goal_x, goal_y, goal_theta, robot):
         list: The robot's odometry [x, y, theta] once the goal is reached.
     """
     while True:
-        x, y, theta = robot.read_odometry()
+        x, y, theta = read_pose(robot)
 
         # Error between where we are and where we want to be, in the odometry
         # frame.
@@ -118,7 +150,7 @@ def drive_to_pose(goal_x, goal_y, goal_theta, robot):
 
     # Stop as soon as the goal is reached, before reading the final pose.
     robot.stop()
-    return robot.read_odometry()
+    return read_pose(robot)
 
 
 robot = MBot()
@@ -140,11 +172,20 @@ try:
         time.sleep(PAUSE_AT_GOAL)
 except KeyboardInterrupt:
     print("\nInterrupted.")
+except RuntimeError as err:
+    # Something the robot couldn't give us. Report it plainly rather than
+    # dumping a traceback.
+    print(f"\n{err}")
 finally:
     # Always stop the robot on the way out, however the loop ended.
     robot.stop()
 
-    # Print out the robot's final odometry before exiting.
-    x, y, theta = robot.read_odometry()
-    print(f"Final pose: x: {x:.3f} m, y: {y:.3f} m, "
-          f"theta: {np.degrees(theta):.1f} deg")
+    # Print out the robot's final odometry before exiting. This is guarded
+    # because a failure here would otherwise be raised while the first error
+    # was still being handled, hiding the error that actually mattered.
+    try:
+        x, y, theta = read_pose(robot, tries=1)
+        print(f"Final pose: x: {x:.3f} m, y: {y:.3f} m, "
+              f"theta: {np.degrees(theta):.1f} deg")
+    except RuntimeError:
+        print("Final pose: unavailable, no odometry from the robot.")

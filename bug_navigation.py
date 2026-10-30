@@ -49,6 +49,66 @@ MAX_TURN = 1.0          # Fastest rotation we will command (rad/s).
 MIN_TURN = 0.3          # Slowest rotation that still turns the robot (rad/s).
 
 LOOP_SLEEP = 0.1        # Delay between control updates (s).
+READ_TRIES = 20         # Reads to wait for robot data before giving up.
+
+
+def read_pose(robot, tries=READ_TRIES):
+    """Reads the robot's pose, waiting for odometry to start arriving.
+
+    read_odometry() hands back an empty list, not a pose, when the bridge has
+    no odometry for us: either nothing has been published on MBOT_ODOMETRY
+    yet, or the robot's services aren't running. Unpacking that empty list is
+    what crashes the script, so retry briefly and then say what is wrong.
+
+    Args:
+        robot (MBot): The robot to read.
+        tries (int): How many reads to attempt before giving up.
+
+    Returns:
+        list: The robot's odometry [x, y, theta].
+
+    Raises:
+        RuntimeError: If no odometry arrives.
+    """
+    for _ in range(tries):
+        pose = robot.read_odometry()
+        if pose is not None and len(pose) == 3:
+            return pose
+        time.sleep(0.1)
+
+    raise RuntimeError(
+        "No odometry from the robot: the MBOT_ODOMETRY channel is empty.\n"
+        "The robot's services are probably not running. Check with:\n"
+        "    systemctl list-units 'mbot*'\n"
+        "and check that the pose updates in the MBot web app.")
+
+
+def read_scan(robot, tries=READ_TRIES):
+    """Reads a Lidar scan, waiting for one to arrive.
+
+    Fails the same way as the odometry if the Lidar isn't publishing.
+
+    Args:
+        robot (MBot): The robot to read.
+        tries (int): How many reads to attempt before giving up.
+
+    Returns:
+        tuple: The ranges and angles of the scan.
+
+    Raises:
+        RuntimeError: If no scan arrives.
+    """
+    for _ in range(tries):
+        scan = robot.read_lidar()
+        if scan is not None and len(scan) == 2 and len(scan[0]) > 0:
+            return scan[0], scan[1]
+        time.sleep(0.1)
+
+    raise RuntimeError(
+        "No Lidar scan from the robot: the MBOT_LIDAR channel is empty.\n"
+        "Check that the Lidar is spinning and that the robot's services are\n"
+        "running:\n"
+        "    systemctl list-units 'mbot*'")
 
 
 def wrap_to_pi(angle):
@@ -228,7 +288,7 @@ robot.reset_odometry()
 print("Enter the goal pose, in the odometry frame.")
 goal_x = read_float("  Goal x (m): ")
 goal_y = read_float("  Goal y (m): ")
-goal_theta = read_float("  Goal theta (rad): ")
+goal_theta = wrap_to_pi(read_float("  Goal theta (rad): "))
 print(f"Driving to goal: x: {goal_x:.2f} m, y: {goal_y:.2f} m, "
       f"theta: {np.degrees(goal_theta):.1f} deg")
 
@@ -240,8 +300,8 @@ last_state = None        # Previous state, used to announce transitions.
 
 try:
     while state != DONE:
-        ranges, thetas = robot.read_lidar()
-        x, y, theta = robot.read_odometry()
+        ranges, thetas = read_scan(robot)
+        x, y, theta = read_pose(robot)
 
         # Where the goal is, both in the odometry frame and as the robot sees
         # it. goal_angle is the direction the robot must travel to reach the
@@ -380,11 +440,20 @@ try:
     print("Goal pose reached.")
 except KeyboardInterrupt:
     print("\nInterrupted.")
+except RuntimeError as err:
+    # Something the robot couldn't give us. Report it plainly rather than
+    # dumping a traceback.
+    print(f"\n{err}")
 finally:
     # Always stop the robot on the way out, however the loop ended.
     robot.stop()
 
-    # Print out the robot's final odometry before exiting.
-    x, y, theta = robot.read_odometry()
-    print(f"Final pose: x: {x:.3f} m, y: {y:.3f} m, "
-          f"theta: {np.degrees(theta):.1f} deg")
+    # Print out the robot's final odometry before exiting. This is guarded
+    # because a failure here would otherwise be raised while the first error
+    # was still being handled, hiding the error that actually mattered.
+    try:
+        x, y, theta = read_pose(robot, tries=1)
+        print(f"Final pose: x: {x:.3f} m, y: {y:.3f} m, "
+              f"theta: {np.degrees(theta):.1f} deg")
+    except RuntimeError:
+        print("Final pose: unavailable, no odometry from the robot.")
