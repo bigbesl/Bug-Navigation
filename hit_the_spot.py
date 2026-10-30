@@ -1,3 +1,4 @@
+import sys
 import time
 import numpy as np
 from mbot_bridge.api import MBot
@@ -27,6 +28,7 @@ MIN_TURN = 0.3          # Slowest rotation that still turns the robot (rad/s).
 
 LOOP_SLEEP = 0.05       # Delay between control updates (s).
 ODOM_TRIES = 20         # Reads to wait for odometry before giving up.
+STARTUP_TRIES = 5       # Reads to wait for odometry at startup.
 
 
 def read_pose(robot, tries=ODOM_TRIES):
@@ -157,6 +159,14 @@ robot = MBot()
 
 # Reset the robot odometry to zero at the beginning of the run.
 robot.reset_odometry()
+
+# Check the robot is publishing its pose before trying to drive anywhere, so a
+# robot that isn't says so straight away.
+try:
+    read_pose(robot, tries=STARTUP_TRIES)
+except RuntimeError as err:
+    print(f"\n{err}")
+    sys.exit(1)
 
 try:
     for goal_x, goal_y, goal_theta in GOALS:

@@ -1,0 +1,5 @@
+# The code runs on the robot's Raspberry Pi, so keep LF line endings
+# everywhere: in the repository, and in the working tree on every machine.
+# Without this, Git on Windows converts to CRLF on checkout (core.autocrlf is
+# true by default there) and the working tree ends up mixed.
+* text=auto eol=lf
